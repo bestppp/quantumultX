@@ -1,1 +1,85 @@
+// 建行自动签到核心脚本
+const COOKIE_KEY = "ccb_auth_cookie";
+const SIGN_URL = "https://mrhf.chengchao.com.cn/ccb-internal-sit/mobile/sign/doSign";
 
+// 主执行函数
+(async () => {
+    try {
+        const cookie = $prefs.valueForKey(COOKIE_KEY);
+        if (!cookie) {
+            throw new Error("未找到Cookie，请重新登录APP");
+        }
+        
+        // 执行签到
+        const signResult = await $task.fetch({
+            url: SIGN_URL,
+            method: "POST",
+            headers: {
+                "Cookie": cookie,
+                "User-Agent": "CCB/Dream/Version 7.0.0 iPhone iOS 17.3.1",
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                activityId: "DAILY_SIGN",
+                userId: getUserId(cookie),
+                deviceId: generateDeviceId()
+            })
+        });
+        
+        // 处理结果
+        const data = JSON.parse(signResult.body);
+        if (data.code === "SUCCESS" || data.code === "ALREADY_SIGNED") {
+            // 记录签到时间
+            $prefs.setValueForKey(Date.now(), "ccb_last_sign");
+            
+            // 获取积分余额
+            const points = await getPoints(cookie);
+            
+            // 生成通知
+            $notification.post(
+                "🎉 建行签到" + (data.code === "ALREADY_SIGNED" ? "完成" : "成功"),
+                data.code === "ALREADY_SIGNED" ? 
+                    "今日已完成签到" : `获赠 ${data.pointsAwarded || 5} 积分`,
+                `💰 总积分: ${points.total}分 | 次日可领: ${points.tomorrow || 0}分`
+            );
+        } else {
+            throw new Error(data.message || "签到失败");
+        }
+    } catch (e) {
+        $notification.post("❌ 签到失败", e.message, "请手动签到一次");
+    }
+})();
+
+// 工具函数
+function getUserId(cookie) {
+    const match = cookie.match(/USER_ID=([^;]+)/);
+    return match ? match[1] : "default_user";
+}
+
+function generateDeviceId() {
+    return "IOS_" + Math.random().toString(36).substr(2, 10);
+}
+
+async function getPoints(cookie) {
+    try {
+        const response = await $task.fetch({
+            url: "https://mrhf.chengchao.com.cn/ccb-internal-sit/mobile/points/getTotalPoints?timestamp=" + Date.now(),
+            headers: {
+                "Cookie": cookie,
+                "User-Agent": "CCB/Dream/Version 7.0.0 iPhone iOS 17.3.1"
+            }
+        });
+        const data = JSON.parse(response.body);
+        return {
+            total: data.totalPoints || "未知",
+            tomorrow: data.nextDayPoints || 0
+        };
+    } catch {
+        return { total: "未知", tomorrow: 0 };
+    }
+}
+
+// 第一次运行时保存自身URL
+if (typeof $task !== 'undefined') {
+    $prefs.setValueForKey($task.url, "ccb_sign_url");
+}
