@@ -1,1 +1,28 @@
-
+// 建行APP积分页面检测器
+if (typeof $response !== 'undefined') {
+    // 检测是否在积分页面
+    if ($request.url.includes('points/home')) {
+        const now = Date.now();
+        const lastSignTime = $prefs.valueForKey("ccb_last_sign") || 0;
+        
+        // 当天未签到且不是首次加载
+        if (now - lastSignTime > 86400000) {
+            $notification.post(
+                "🔔 检测到积分页面", 
+                "正在自动签到...", 
+                "请勿关闭APP",
+                { "open-url": "ccbcloud://" }
+            );
+            
+            // 延迟执行签到
+            $task.delay({
+                seconds: 2
+            }, () => {
+                $task.run({
+                    script: $prefs.valueForKey("ccb_sign_url") || "https://raw.githubusercontent.com/yourname/repo/main/ccb_sign.js"
+                });
+            });
+        }
+    }
+    $done({});
+}
