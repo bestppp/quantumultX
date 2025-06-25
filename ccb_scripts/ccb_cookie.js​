@@ -1,1 +1,46 @@
+// 建行Cookie自动提取工具
+const COOKIE_KEY = "ccb_auth_cookie";
 
+if (typeof $response !== 'undefined') {
+    try {
+        // 检测登录成功响应
+        if ($response.status == 200 && $request.url.includes('auth/login')) {
+            const data = JSON.parse($response.body);
+            
+            if (data.code === 'SUCCESS') {
+                // 提取关键Cookie
+                const cookieHeader = $response.headers['Set-Cookie'] || "";
+                const tokenMatch = cookieHeader.match(/SESSION=([^;]+)/);
+                const userIdMatch = cookieHeader.match(/USER_ID=([^;]+)/);
+                
+                if (tokenMatch && userIdMatch) {
+                    const authCookie = `SESSION=${tokenMatch[1]}; USER_ID=${userIdMatch[1]}`;
+                    
+                    // 持久化存储
+                    $prefs.setValueForKey(authCookie, COOKIE_KEY);
+                    $prefs.setValueForKey(Date.now(), "ccb_cookie_time");
+                    
+                    // 成功通知
+                    $notification.post(
+                        "🍀 建行Cookie已更新", 
+                        "重要凭证获取成功", 
+                        "即将自动开始签到任务",
+                        { "open-url": "ccbcloud://" }
+                    );
+                    
+                    // 3秒后自动启动签到
+                    $task.delay({
+                        seconds: 3
+                    }, () => {
+                        $task.run({
+                            script: $prefs.valueForKey("ccb_sign_url") || "https://raw.githubusercontent.com/yourname/repo/main/ccb_sign.js"
+                        });
+                    });
+                }
+            }
+        }
+    } catch (e) {
+        $notification.post("⚠️ Cookie提取失败", e.message, "");
+    }
+    $done({});
+}
